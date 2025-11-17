@@ -25,26 +25,80 @@ library(readr)
 Read in data and clean.
 
 ```{r}
-h <- read_csv("data/homicide-data.csv")
+homi <- read_csv("data/homicide-data.csv")
 
-h_clean <- h %>%
+homi_clean <- homi %>%
   mutate(
     city_state = paste(city, state, sep = ", "),
-    solved = if_else(disposition %in% c("Closed with arrest", "Closed with arrest (exonerated)" , "Closed by arrest" , "Closed (No arrest)", "Closed with arrest"), TRUE, FALSE)
+    disposition = str_trim(disposition),
+    solved = if_else(disposition == "Closed by arrest", 1L, 0L),
+    victim_age = as.numeric(victim_age),
+    victim_race = str_to_title(str_trim(victim_race)),
+    victim_sex = str_to_title(str_trim(victim_sex))
+  ) %>%
+  filter(
+    !(city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL")),  # drop specified cities
+    victim_race %in% c("White", "Black")                                               # keep only white/black
   )
 
+glimpse(homi_clean)
+count(homi_clean, city_state) %>% arrange(desc(n)) %>% head()
+```
 
-# remove Dallas, Phoenix, Kansas City, remove Tulsa, AL
-h_clean <- h_clean %>%
-  filter(!city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL"))
+Fit a logistic regression for Baltimore.
 
+```{r}
+baltimore <- homi_clean %>% filter(city_state == "Baltimore, MD")
 
-# limit victim_race to be white or black
-h_clean <- h_clean %>%
-  filter(tolower(victim_race) %in% c("white", "black"))
+baltimore <- baltimore %>%
+  mutate(victim_sex = factor(victim_sex, levels = c("Female", "Male")),
+         victim_race = factor(victim_race)) 
 
+balt_model <- glm(solved ~ victim_age + victim_sex + victim_race, data = baltimore, family = binomial())
+balt_tidy <- tidy(balt_model, conf.int = TRUE, exponentiate = TRUE)
 
-# make sure victim_age to be numeric
-h_clean <- h_clean %>% mutate(victim_age = as.numeric(victim_age))
+# pull the Male vs Female OR row (handle case term name might differ by dataset)
+balt_OR_row <- balt_tidy %>% filter(term %in% c("victim_sexMale", "victim_sexMale"))
+balt_OR_row
+```
+
+Fit models by city robustly, extract OR and CI for male vs female
+
+```{r}
+city_summary <- homi_clean %>%
+  group_by(city_state) %>%
+  summarise(n = n(), sexes = n_distinct(victim_sex), .groups = "drop") %>%
+  filter(n >= 10, sexes >= 2)
+
+cities <- city_summary$city_state
+
+models_by_city <- homi_clean %>%
+  filter(city_state %in% cities) %>%
+  group_by(city_state) %>%
+  nest() %>%
+  mutate(
+    data = map(data, ~ .x %>% mutate(victim_sex = factor(victim_sex, levels = c("Female","Male")),
+                                     victim_race = factor(victim_race)) ),
+    model = map(data, ~ tryCatch(glm(solved ~ victim_age + victim_sex + victim_race, data = .x, family = binomial()), error = function(e) NULL)),
+    tidy = map(model, ~ if (is.null(.x)) tibble(term=NA, estimate=NA, std.error=NA, statistic=NA, p.value=NA, conf.low=NA, conf.high=NA) else tidy(.x, conf.int = TRUE, exponentiate = TRUE))
+  ) %>%
+  select(city_state, tidy) %>%
+  unnest(tidy)
+
+# pull male vs female rows and arrange
+or_by_city <- models_by_city %>%
+  filter(term == "victim_sexMale") %>%
+  select(city_state, estimate, conf.low, conf.high, p.value) %>%
+  arrange(estimate)
+
+# plot (English labels for Rmd)
+or_by_city %>%
+  mutate(city_state = fct_reorder(city_state, estimate)) %>%
+  ggplot(aes(x = city_state, y = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  coord_flip() +
+  labs(title = "Adjusted OR for Solving Homicide (Male vs Female)", x = "City", y = "Odds Ratio (Male vs Female)") +
+  theme_minimal(base_size = 12)
 ```
 
