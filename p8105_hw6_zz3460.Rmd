@@ -102,3 +102,32 @@ or_by_city %>%
   theme_minimal(base_size = 12)
 ```
 
+
+## Problem 2
+
+Read in data and clean.
+
+```{r}
+library(p8105.datasets)
+data("weather_df")
+wd <- weather_df %>% select(tmax, tmin, prcp) %>% drop_na()
+
+```
+
+Bootstrap
+
+```{r}
+set.seed(2025)
+B <- 5000
+boot_results <- map_dfr(seq_len(B), function(i) {
+  samp <- sample_n(wd, size = nrow(wd), replace = TRUE)
+  fit <- lm(tmax ~ tmin + prcp, data = samp)
+  r2 <- glance(fit)$r.squared
+  td <- tidy(fit)
+  beta_tmin <- td %>% filter(term == "tmin") %>% pull(estimate)
+  beta_prcp <- td %>% filter(term == "prcp") %>% pull(estimate)
+  tibble(r2 = r2, beta_prod = beta_tmin * beta_prcp)
+})
+
+```
+
