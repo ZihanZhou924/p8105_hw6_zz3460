@@ -22,3 +22,29 @@ library(purrr)
 library(readr)
 ```
 
+Read in data and clean.
+
+```{r}
+h <- read_csv("data/homicide-data.csv")
+
+h_clean <- h %>%
+  mutate(
+    city_state = paste(city, state, sep = ", "),
+    solved = if_else(disposition %in% c("Closed with arrest", "Closed with arrest (exonerated)" , "Closed by arrest" , "Closed (No arrest)", "Closed with arrest"), TRUE, FALSE)
+  )
+
+
+# remove Dallas, Phoenix, Kansas City, remove Tulsa, AL
+h_clean <- h_clean %>%
+  filter(!city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL"))
+
+
+# limit victim_race to be white or black
+h_clean <- h_clean %>%
+  filter(tolower(victim_race) %in% c("white", "black"))
+
+
+# make sure victim_age to be numeric
+h_clean <- h_clean %>% mutate(victim_age = as.numeric(victim_age))
+```
+
