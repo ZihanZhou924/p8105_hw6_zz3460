@@ -144,3 +144,20 @@ r2_CI
 beta_prod_CI
 ```
 
+
+## Problem 3
+
+Load and clean the data.
+
+```{r}
+bw <- read_csv("data/birthweight.csv")
+
+bw_clean <- bw %>%
+  mutate(
+    babysex = factor(babysex, levels = c(1,2), labels = c("male","female")),
+    frace = factor(frace), mrace = factor(mrace), malform = factor(malform)
+  ) %>%
+  # keep rows with essential vars non-missing for modeling
+  filter(!is.na(bwt), !is.na(blength), !is.na(bhead), !is.na(gaweeks))
+```
+
