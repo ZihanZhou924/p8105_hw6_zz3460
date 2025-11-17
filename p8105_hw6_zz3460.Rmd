@@ -131,3 +131,16 @@ boot_results <- map_dfr(seq_len(B), function(i) {
 
 ```
 
+Distribution and CI
+
+```{r}
+r2_CI <- quantile(boot_results$r2, c(0.025, 0.975))
+beta_prod_CI <- quantile(boot_results$beta_prod, c(0.025, 0.975))
+
+ggplot(boot_results, aes(r2)) + geom_histogram(bins = 40) + labs(title = "Bootstrap distribution of R-squared")
+ggplot(boot_results, aes(beta_prod)) + geom_histogram(bins = 40) + labs(title = "Bootstrap distribution of beta1 * beta2")
+
+r2_CI
+beta_prod_CI
+```
+
