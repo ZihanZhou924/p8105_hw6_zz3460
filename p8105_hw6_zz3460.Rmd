@@ -167,6 +167,8 @@ The 95% confidence interval for \( R^2 \) ranges from 0.934 to 0.947. This narro
 Load and clean the data.
 
 ```{r}
+library(modelr)
+library(rsample)
 bw <- read_csv("data/birthweight.csv")
 
 bw_clean <- bw %>%
@@ -178,5 +180,97 @@ bw_clean <- bw %>%
     malform = as.factor(malform)
   ) %>%
   drop_na()
+
+glimpse(bw_clean)
 ```
 
+My model
+
+Description:
+
+I first identified predictors based on domain knowledge—fetal growth indicators (blength, bhead, gaweeks) are directly linked to birthweight, while maternal factors (babysex, momage, ppbmi, smoken, wtgain) and demographic variables (frace, mrace) are known to influence fetal development.
+
+Then, I chose a linear regression model with bwt as the outcome, including all selected variables to capture both fetal and maternal effects.
+
+Since the goal was to build a comprehensive model, I did not remove any variables from my model.
+
+```{r}
+prop_model <- lm(
+  bwt ~ blength + bhead + gaweeks + babysex + momage + ppbmi + smoken + wtgain + frace + mrace,
+  data = bw_clean
+)
+
+summary(prop_model)
+
+bw_aug <- bw_clean %>%
+  add_predictions(prop_model) %>%
+  add_residuals(prop_model)
+
+ggplot(bw_aug, aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.4) +
+  geom_hline(yintercept = 0, color = "red") +
+  labs(
+    title = "Residuals vs Fitted Values",
+    x = "Fitted birthweight",
+    y = "Residuals"
+  )
+
+```
+
+The plot of model residuals against fitted values reveals that for the majority of the data (central mass), the residuals are clustered around zero, indicating that the model fits reasonably well for babies with average birthweights. However, there is some evidence of non-linearity or uncaptured variance at lower predicted birthweights, where residuals tend to be positive. This suggests the model may slightly underpredict the weight of smaller babies or that other factors are influencing low birthweight outcomes.
+
+Comparation with two other models
+
+```{r}
+model_A <- lm(bwt ~ blength + gaweeks, data = bw_clean)
+
+model_B <- lm(
+  bwt ~ bhead * blength * babysex,
+  data = bw_clean
+)
+
+set.seed(123)
+
+cv_data <- crossv_mc(bw_clean, 100) %>%
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+
+cv_results <- cv_data %>%
+  mutate(
+    fit_prop  = map(train, ~ lm(bwt ~ blength + bhead + gaweeks + babysex + momage + ppbmi + smoken + wtgain + frace + mrace, data = .x)),
+    fit_A     = map(train, ~ lm(bwt ~ blength + gaweeks, data = .x)),
+    fit_B     = map(train, ~ lm(bwt ~ bhead * blength * babysex, data = .x)),
+    mse_prop  = map2_dbl(fit_prop, test,  ~ mean((predict(.x, .y) - .y$bwt)^2)),
+    mse_A     = map2_dbl(fit_A,    test,  ~ mean((predict(.x, .y) - .y$bwt)^2)),
+    mse_B     = map2_dbl(fit_B,    test,  ~ mean((predict(.x, .y) - .y$bwt)^2))
+  )
+
+cv_summary <- cv_results %>%
+  summarise(
+    MSE_prop = mean(mse_prop),
+    MSE_A    = mean(mse_A),
+    MSE_B    = mean(mse_B)
+  )
+
+cv_summary
+
+cv_results %>% 
+  select(starts_with("mse")) |> 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "mse",
+    names_prefix = "mse_"
+  ) |> 
+  mutate(model = fct_inorder(model)) |> 
+  ggplot(aes(x = model, y = mse)) + 
+  geom_violin()
+```
+
+The cross-validated MSE results show that prop_model has the lowest mean MSE (75,874.16), followed by model_B (83,233.12) and model_A (109,526.6). This indicates that the custom prop_model—which includes fetal measurements, maternal characteristics, and demographic factors—has the best prediction performance.
+
+model_A (only blength and gaweeks) performs the worst, as it lacks key predictors. model_B (with interactions between bhead, blength, and babysex) improves over model_A but is less effective than prop_model, likely because it does not account for maternal factors like smoking or BMI.
+
+The violin plot further confirms these trends: prop_model has the tightest and lowest MSE distribution, while model_A has the widest and highest distribution.
