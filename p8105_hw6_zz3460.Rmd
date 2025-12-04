@@ -17,6 +17,7 @@ Set seed and load key packages.
 set.seed(2025)
 
 library(tidyverse)
+library(dplyr)
 library(broom)
 library(purrr)
 library(readr)
@@ -113,7 +114,9 @@ Read in data and clean.
 ```{r}
 library(p8105.datasets)
 data("weather_df")
-wd <- weather_df %>% select(tmax, tmin, prcp) %>% drop_na()
+wd <- weather_df %>%
+  select(tmax, tmin, prcp) %>% 
+  drop_na()
 
 ```
 
@@ -133,6 +136,7 @@ boot_results <- map_dfr(seq_len(B), function(i) {
 })
  
 print(boot_results)
+summary(boot_results)
 ```
 
 Distribution and CI
